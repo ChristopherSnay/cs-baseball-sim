@@ -77,13 +77,12 @@ export function Draft() {
 
         {/* Right: Player Picker */}
         <Grid item xs={12} md={9} sx={{ minHeight: 0, height: '100%', display: 'flex' }}>
-          <Box sx={{ width: '100%', minHeight: 0, height: '100%', minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {isProcessing ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 0 }}>
+          <Box sx={{ width: '100%', minHeight: 0, height: '100%', minWidth: 0, border: '1px solid', borderColor: 'divider', borderRadius: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+            <PlayerPickerTable availablePlayers={availablePlayers} isUserTurn={isUserTurn} userTeamId={userTeamId} onDraftPlayer={handlePlayerDraft} />
+            {isProcessing && (
+              <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0, 0, 0, 0.3)', borderRadius: 1, zIndex: 10 }}>
                 <CircularProgress />
               </Box>
-            ) : (
-              <PlayerPickerTable availablePlayers={availablePlayers} isUserTurn={isUserTurn} userTeamId={userTeamId} onDraftPlayer={handlePlayerDraft} />
             )}
           </Box>
         </Grid>
