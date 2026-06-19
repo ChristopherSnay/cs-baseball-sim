@@ -1,0 +1,477 @@
+Build a React TypeScript baseball simulator single-page application using
+MUI (Material UI) v5 components. The app has no backend — all seed data
+is imported from src/data/seeds.ts as TypeScript constants. All runtime
+state lives in React context or component state, persisted to localStorage.
+
+Initial Instruction:
+Use Apply type. When you generate the code, start with the types file and GameContext, then generate each util file, then each page. 
+
+─────────────────────────────────────────
+TECH STACK
+─────────────────────────────────────────
+- React + TypeScript (use latest stable major versions)
+- React Router (use latest stable major version)
+- MUI (@mui/material, @mui/icons-material, use latest stable major versions)
+- No external state management library — use React Context + useReducer
+- Build tool: Vite (latest stable)
+- React plugin: @vitejs/plugin-react (latest stable, must be compatible with the selected Vite version)
+- Package policy: prefer semver ranges for latest stable (avoid stale hard pins that can cause ERESOLVE conflicts)
+
+─────────────────────────────────────────
+ROUTES
+─────────────────────────────────────────
+/              → Home screen (team generation)
+/draft         → Snake draft screen
+/season        → Season simulation + results screen
+
+─────────────────────────────────────────
+SEED DATA  (src/data/seeds.ts)
+─────────────────────────────────────────
+Do not use /public/data or any fetch calls for seed data.
+Instead, define all seed data as exported TypeScript constants
+directly in src/data/seeds.ts:
+
+  export const FIRST_NAMES: string[] = [
+    // 100 common first names
+  ]
+
+  export const LAST_NAMES: string[] = [
+    // 200 common last names
+  ]
+
+  export const TEAM_NAMES: { city: string; nickname: string }[] = [
+    // At least 30 unique city+nickname pairs
+    // e.g. { city: "Austin", nickname: "Armadillos" }
+  ]
+
+These are imported directly by playerGenerator.ts and the Home
+page — no async loading or loading states needed for seed data.
+
+─────────────────────────────────────────
+PERSISTENCE  (localStorage)
+─────────────────────────────────────────
+All runtime game state is persisted to localStorage under a
+single key: "diamondSim_state".
+
+- On GameContext mount, attempt to rehydrate state from
+  localStorage. If valid state is found, restore it.
+- After every state change (player drafted, pick advanced,
+  season simulated), serialize the full context state and
+  write it to localStorage.
+- Include a versioning field (e.g. diamondSim_version: "1.0")
+  at the top level of the saved object. If the version does
+  not match the current app version, discard the stored state
+  and start fresh.
+- The "Play Again" button clears the localStorage key and
+  resets context to its initial empty state.
+
+─────────────────────────────────────────
+GLOBAL DATA TYPES  (types/index.ts)
+─────────────────────────────────────────
+Define the following TypeScript interfaces:
+
+Position = 'C' | '1B' | '2B' | '3B' | 'SS' | 'LF' | 'CF' | 'RF' |
+           'DH' | 'SP' | 'RP' | 'CL'
+
+PlayerType = 'hitter' | 'pitcher'
+
+interface Player {
+  id: string                  // uuid
+  firstName: string
+  lastName: string
+  position: Position
+  type: PlayerType
+  age: number                 // 18–38
+  overall: number             // 1–99 composite rating
+
+  // Hitter attributes (1–99 each, null for pitchers)
+  contact: number | null
+  power: number | null
+  speed: number | null
+  fielding: number | null
+  arm: number | null
+
+  // Pitcher attributes (1–99 each, null for hitters)
+  stuff: number | null
+  control: number | null
+  stamina: number | null      // higher = can pitch more innings (SP only)
+  
+  // Season stats (accumulated during simulation)
+  stats: HitterStats | PitcherStats | null
+}
+
+interface HitterStats {
+  G: number; AB: number; H: number; HR: number; RBI: number
+  R: number; BB: number; SO: number; SB: number
+  AVG: string   // computed "0.000" string
+  OBP: string
+  SLG: string
+  OPS: string
+}
+
+interface PitcherStats {
+  G: number; GS: number; W: number; L: number; SV: number
+  IP: number; H: number; ER: number; BB: number; SO: number
+  ERA: string   // computed "0.00" string
+  WHIP: string
+}
+
+interface Team {
+  id: string
+  city: string
+  nickname: string
+  isUserTeam: boolean
+  roster: Player[]           // filled after draft
+  wins: number
+  losses: number
+}
+
+interface GameResult {
+  homeTeamId: string
+  awayTeamId: string
+  homeScore: number
+  awayScore: number
+}
+
+─────────────────────────────────────────
+SCREEN 1 — HOME  (route: /)
+─────────────────────────────────────────
+Layout:
+- Centered MUI Card with the app title "Diamond Sim" in large typography.
+- A subtitle: "Build your roster. Win the pennant."
+- One primary MUI Button: "Generate Teams & Start"
+
+On button click:
+1. Import TEAM_NAMES, FIRST_NAMES, and LAST_NAMES from src/data/seeds.ts 
+   (no async fetch needed).
+2. Generate 20 CPU teams by randomly sampling from TEAM_NAMES (no 
+   repeats). Each team starts with an empty roster.
+3. Create Team 21, the user's team. Prompt the user with a MUI Dialog 
+   containing one TextField to enter a team name (city and nickname). 
+   Pre-populate it with "My City Legends" as placeholder. The dialog 
+   has a "Confirm" button.
+4. After the user confirms their team name, store all 21 teams and the 
+   name arrays in GameContext and navigate to /draft.
+
+Notes on initialization (implemented behavior):
+- The user's draft slot (`userPickNumber`) is randomized between 1 and 21.
+- To ensure the user is actually placed at that slot in the snake order,
+  the `userTeam.id` is inserted into the `teamIds` array at index
+  `userPickNumber - 1` prior to building the snake draft order.
+
+─────────────────────────────────────────
+PLAYER POOL GENERATION
+─────────────────────────────────────────
+Generate a pool of approximately 1000 players. This provides a large surplus beyond the 420 required (21 teams × 20 players), allowing many players to remain undrafted.
+
+Roster slot requirements per team (20 players total):
+  C  × 1    (type: hitter)
+  1B × 1    (type: hitter)
+  2B × 1    (type: hitter)
+  3B × 1    (type: hitter)
+  SS × 1    (type: hitter)
+  LF × 1    (type: hitter)
+  CF × 1    (type: hitter)
+  RF × 1    (type: hitter)
+  Bench× 3  (any hitter position — DHs selected from bench during games)
+  SP × 4    (type: pitcher)
+  RP × 4    (type: pitcher)
+  CL × 1    (type: pitcher)
+
+DH Flex Rule:
+- DH is NOT a draft requirement slot.
+- The 3 bench hitter slots are filled with any hitter and one is used as the DH during games.
+- During game simulation, the DH is selected from available bench/non-starting hitters,
+  prioritizing players with high contact/power and low fielding (avoiding liability defensively).
+- Very few DH-labeled hitters exist in the player pool (12); most are labeled by defensive position.
+
+Pool position distribution (~1006 players total):
+  C:  63  |  1B: 63  |  2B: 63  |  3B: 63  |  SS: 63
+  LF: 63  |  CF: 63  |  RF: 63  |  DH: 12
+  SP: 220  |  RP: 220  |  CL: 50
+
+Bench / extras:
+  - The large player pool ensures a surplus of ~586 undrafted players,
+    giving managers diverse talent to select from while maintaining balanced availability.
+
+Player generation rules:
+- Name: random firstName + random lastName from seed files.
+- Age: weighted random — most players 22–32, tails at 18 and 38.
+- Overall: normal distribution centered at 55, range 30–99. Use
+  Math.random() Box-Muller transform. A small percentage (<5%) are
+  elite (85–99 overall).
+- Hitter attributes (contact, power, speed, fielding, arm): randomized
+  around the player's overall ±15. Position tendencies apply:
+    SS/2B:  higher fielding/speed, moderate power
+    C:      higher arm/fielding, lower speed
+    1B/DH:  higher power, lower speed/fielding
+    CF:     highest speed
+    RF:     higher arm
+- Pitcher attributes (stuff, control, stamina): randomized around
+  overall ±15.
+    SP:  higher stamina (60–99 range)
+    RP:  moderate stamina (30–65 range), higher stuff
+    CL:  highest stuff (50–99), lower stamina
+- Overall for hitters = weighted average:
+    (contact×0.3 + power×0.25 + speed×0.2 + fielding×0.15 + arm×0.1)
+- Overall for pitchers = weighted average:
+    (stuff×0.4 + control×0.35 + stamina×0.25)
+- Initialize all stats fields to null.
+
+─────────────────────────────────────────
+SCREEN 2 — DRAFT  (route: /draft)
+─────────────────────────────────────────
+Setup on mount:
+- Randomly assign the user's pick number between 1 and 21 (inclusive).
+  Display it prominently: "You are picking #[N] in the draft."
+- Build the full snake draft order for 20 rounds:
+    Odd rounds:  pick order 1 → 21
+    Even rounds: pick order 21 → 1
+  This produces an array of 420 pick slots, each tagged with a teamId.
+- Track currentPickIndex (starts at 0).
+
+Draft flow:
+- Picks where teamId ≠ userTeam: CPU auto-picks instantly (no delay
+  needed, but batch-update every 5 CPU picks and re-render so the user
+  can see the draft board updating). CPU logic:
+    1. Identify which position slots the team still needs.
+    2. From available players at those positions, pick the one with the
+       highest overall rating.
+    3. Once fixed positions are filled, if hitter slots are still short,
+       fill flexible DH/bench with best available hitter.
+    4. If all slots are effectively satisfied, pick best available overall.
+- Picks where teamId = userTeam: pause automation and display the
+  user pick UI (see below).
+- After all 420 picks, navigate to /season.
+
+Draft Board Panel (left side, ~30% width):
+- A scrollable MUI Table showing recent picks (last 20) and upcoming
+  picks (next 5). Columns: Round, Pick #, Team, Player Name, Position,
+  OVR.
+- The user's picks are highlighted with a distinct MUI color (primary).
+- Show current round and pick number in a sticky header.
+- Add a "Position Progress" section between the round/pick header and team roster counts.
+- Position Progress displays chips for each required slot with `filled/required` counts:
+    C(2), 1B(1), 2B(1), 3B(1), SS(1), LF(1), CF(1), RF(1), DH(1), SP(5), RP(5), CL(2), Bench(3)
+- Chip states:
+    incomplete (0 filled): outlined/default
+    partial (>0 but not full): filled/yellow (warning)
+    complete (filled >= required): filled/green (success)
+- DH progress reflects flexible satisfaction by total hitter count,
+  not only literal `position: DH` players.
+- Show each team's roster count as a small sidebar chip list.
+
+User Pick Panel (right side, ~70% width — only active on user's turn):
+- Display a bold banner: "YOUR PICK — Round [X], Pick [Y]"
+- Show which positions the user still needs to fill (color-coded chips: 
+  red = still needed, green = filled).
+- A MUI Tabs component with two tabs:
+    Tab 1 "All Players" — shows all available (undrafted) players.
+    Tab 2 "By Position" — allows filtering by every position via chips:
+      All, C, 1B, 2B, 3B, SS, LF, CF, RF, DH, SP, RP, CL
+- Each tab contains a MUI DataGrid (or sortable MUI Table) with columns:
+    Name | Age | POS | OVR | CON | POW | SPD | FLD | ARM | STU | CTRL | STA
+  Display non-applicable attributes as "-" (e.g., hitter columns blanked for pitchers and vice versa).
+- All columns are sortable (click header to sort asc/desc).
+- Ensure POW sorts by the `power` field (not `contact`).
+- Each row has a "Draft" MUI Button. Clicking it drafts that player to
+  the user's team and resumes CPU automation.
+- A search TextField filters players by name in real time.
+- Add pagination (MUI TablePagination) so the user can browse the full list:
+    rows per page options: 10, 25, 50, 100
+    default rows per page: 25
+  Do not hard-cap the list to the first 50 rows.
+- Add subtle row highlighting for players whose position is already fully satisfied on the user's roster.
+- Add subtle row highlighting for partially satisfied positions (yellow tint)
+  and fully satisfied positions (green tint).
+- When CPU picks are running (not user's turn), this panel shows a 
+  loading skeleton with "CPU drafting..." text.
+
+Draft Layout / Scrolling:
+- Ensure the draft page and both panels scroll correctly on smaller viewports.
+- Avoid fixed-height overflow traps; table containers should handle their own vertical scrolling.
+
+─────────────────────────────────────────
+SCREEN 3 — SEASON  (route: /season)
+─────────────────────────────────────────
+Season structure:
+- 21 teams each play 162 games (every team plays every other team 
+  multiple times; generate a balanced round-robin-like schedule so each 
+  team plays exactly 162 games total). Generate all matchups on mount.
+- Simulate all 162 × 21 / 2 = 1,701 total games.
+
+Game simulation logic (pure JS, no visuals per game):
+Each game between Team A and Team B:
+1. Lineup selection and usage (important changes):
+   - For each team, choose a 9-player starting lineup for the game consisting
+     of: C, 1B, 2B, 3B, SS, LF, CF, RF, plus a DH which is chosen as the
+     best remaining hitter (i.e., the best available hitter not already in
+     the defensive slots). This ensures realistic starting-lineup behavior.
+   - Offense calculations and per-game ABs/stat accumulation use the chosen
+     starting lineup rather than aggregating the entire roster.
+   - Starters receive the majority of ABs in a game (full starter allocation);
+     bench players have a small probabilistic chance to receive 0–1 ABs
+     (e.g., ~20% chance of 1 AB) to simulate pinch-hitting/late-inning usage.
+   - Pitcher usage is limited to the game's employed pitchers: select a
+     primary SP (best SP on the roster) and a small set of relievers (top 3
+     RPs and the closer if present). Only pitchers who appear in the game
+     receive accumulated pitcher stats.
+
+2. Compute Team A offensive score:
+     sum of (contact×0.5 + power×0.3 + speed×0.2) for the starting lineup hitters,
+     divided by the number of lineup hitters. Call this teamOff.
+3. Compute Team B pitching score:
+     average (stuff×0.45 + control×0.35 + stamina×0.2) for the team's
+     chosen SPs/RPs for the game (see selection rules). Call this teamPitch.
+4. Team A's expected runs = max(0, Gaussian( (teamOff - teamPitch)/15 + 4.5, stddev=2.5 )). Clamp to 0–20.
+5. Repeat steps 1–4 swapping A and B for Team B's expected runs.
+6. Round both to integers. If tied, add 1 run to a random team (no ties).
+7. Winner gets +1 win, loser gets +1 loss.
+
+After all games are simulated, accumulate player stats (updated rules):
+- Hitters: For each game, accumulate per-game stats for starters/bench based
+  on AB allocation. Starters receive the majority of ABs (deterministic
+  starter allocation), bench players have a low chance to get 0–1 AB.
+  H/HR/RBI/R/BB/SO are generated probabilistically using contact/power/speed
+  weights and some variance.
+- Pitchers: Only pitchers who were chosen to appear in the game (starter
+  SP and selected relievers) receive IP/H/ER/BB/SO. SP IP per start depends on
+  stamina (approx 5–7 IP); RPs: 0.7–1.5 IP per appearance; CL: ~1 IP per save.
+- Derived stats (AVG, OBP, SLG, OPS, ERA, WHIP) computed and formatted after
+  accumulation.
+
+Season Results UI (two tabs):
+
+Tab 1 "Standings":
+- A full MUI Table with columns:
+    Rank | Team | W | L | PCT | GB (games behind leader)
+- Sorted by PCT descending by default.
+- The user's team row is highlighted.
+- A trophy icon (MUI icon) next to the first-place team.
+- A banner at the top: either "🏆 Your team won the pennant!" or 
+  "You finished [Xth] place." with appropriate MUI Alert color.
+
+Tab 2 "Stats Leaders":
+- Two sub-tabs: "Batting" and "Pitching".
+  Batting table columns (sortable):
+    Rank | Player | Team | AVG | HR | RBI | R | OBP | SLG | OPS | SB | SO
+  Pitching table columns (sortable):
+    Rank | Player | Team | W | L | ERA | IP | SO | BB | WHIP | SV
+- Default sort: Batting by AVG desc, Pitching by ERA asc.
+- Top 50 players shown for each; a "Show All" toggle expands to full list.
+- A search/filter TextField to filter by player name or team name.
+- Each row's Team cell is color-coded if it's the user's team.
+
+At the bottom of /season, a "Play Again" MUI Button that resets all
+GameContext state and navigates back to /.
+
+─────────────────────────────────────────
+GAME CONTEXT  (context/GameContext.tsx)
+─────────────────────────────────────────
+Provide a GameContext with the following state and actions:
+
+State:
+  teams: Team[]
+  playerPool: Player[]
+  availablePlayers: Player[]   // pool minus drafted players
+  draftOrder: { pickNumber: number; round: number; teamId: string }[]
+  currentPickIndex: number
+  userTeamId: string
+  userPickNumber: number
+  schedule: GameResult[]       // empty until season simulated
+  seasonSimulated: boolean
+
+Actions (via dispatch or exposed functions):
+  initGame(teams, playerPool, userTeamId, userPickNumber)
+  draftPlayer(playerId, teamId)
+  advancePick()
+  simulateSeason()
+  resetGame()
+
+Additional initialization behavior (implemented):
+- The `initGame` flow now allows `userPickNumber` to be honored by inserting
+  the `userTeam.id` into the `teamIds` array at index `userPickNumber - 1`
+  before building the snake draft order. This ensures the user is placed at
+  their randomized pick slot rather than always at the end.
+
+─────────────────────────────────────────
+APP SHELL & NAVIGATION
+─────────────────────────────────────────
+- A persistent MUI AppBar at the top with:
+    Left: App logo/title "⚾ Diamond Sim"
+    Right: Current route label ("Home" / "Draft" / "Season")
+- No nav links (users follow the linear flow via buttons).
+- Use React Router's <Outlet> pattern.
+- Protect /draft and /season routes — if GameContext has no teams,
+  redirect to /.
+
+─────────────────────────────────────────
+UI / VISUAL GUIDELINES
+─────────────────────────────────────────
+- Use MUI's createTheme with a dark baseball-inspired palette:
+    primary: #1a6b3c (deep green, like a field)
+    secondary: #c8a951 (gold/tan, like a baseball)
+    background.default: #0f1923 (very dark navy)
+    background.paper: #1c2a35
+    text.primary: #f0f0f0
+- Use MUI Typography variants consistently (h4 for page titles, h6 for 
+  section headers, body1/body2 for content).
+- All tables use MUI's dense mode (size="small") with sticky headers 
+  where the list is long.
+- Loading states use MUI Skeleton components.
+- All buttons use MUI Button with appropriate variant (contained for 
+  primary actions, outlined for secondary).
+- Responsive layout using MUI Grid and Box with sx props — must look 
+  good at 1280px minimum width.
+
+Recent UI/UX and behavior refinements (implemented):
+- All major tables (`StatsLeaderboard`, `StandingsTable`, `PlayerPickerTable`, `DraftBoard`) support sortable columns using MUI `TableSortLabel`.
+- Tooltips (`Tooltip`) added to table headers and important UI elements for clarity.
+- `PlayerPickerTable` includes `TablePagination` (rows per page: 10,25,50,100; default 25) and no hard-cap on visible rows.
+- The Draft page's left `DraftBoard` now unifies recent/current/upcoming picks into a single sortable scrollable table and highlights the current pick. A temporal-dead-zone bug where `currentPick` was referenced before initialization has been fixed.
+- Position Progress chips were enhanced to reflect flexible DH satisfaction (DH chip counts based on hitter totals after fixed defensive slots are filled) and display partial/complete visual states (outlined/default, warning, success).
+- Draft automation batches CPU picks and updates the UI; when CPU picks run, the user panel shows a CPU drafting skeleton.
+- The DH slot is flexible across draft and simulation logic: CPU/team fill logic treats DH as a flexible hitter slot once defensive slots are full.
+
+─────────────────────────────────────────
+FILE STRUCTURE
+─────────────────────────────────────────
+
+Top-level files:
+- README.md
+- index.html
+- package.json
+- package-lock.json
+- tsconfig.json
+- tsconfig.node.json
+- vite.config.ts
+- .gitignore
+
+Source tree (`src/`):
+- src/
+  - main.tsx
+  - App.tsx
+  - index.css
+  - theme.ts
+  - pages/
+    - Home.tsx
+    - Draft.tsx
+    - Season.tsx
+  - components/
+    - DraftBoard.tsx
+    - PlayerPickerTable.tsx
+    - StandingsTable.tsx
+    - StatsLeaderboard.tsx
+  - context/
+    - GameContext.tsx
+  - utils/
+    - playerGenerator.ts
+    - draftEngine.ts
+    - scheduleGenerator.ts
+    - simulationEngine.ts
+  - data/
+    - seeds.ts
+  - types/
+    - index.ts
+
+(If you want, I can expand this to include individual exported symbols per file.)
