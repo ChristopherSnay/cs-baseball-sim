@@ -23,7 +23,7 @@ export function Home() {
     // Parse team name (expecting "City Nickname" format)
     const parts = userTeamName.split(' ')
     const nickname = parts[parts.length - 1]
-    const city = parts.slice(0, -1).join(' ') || 'My'
+    const city = parts.slice(0, -1).join(' ') || 'Detroit'
 
     // Generate 20 CPU teams
     const shuffled = [...TEAM_NAMES].sort(() => Math.random() - 0.5)
