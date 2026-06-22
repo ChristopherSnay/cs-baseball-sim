@@ -460,6 +460,8 @@ Source tree (`src/`):
   - components/
     - DraftBoard.tsx
     - PlayerPickerTable.tsx
+    - PlayerRatingsModal.tsx
+    - TeamRosterModal.tsx
     - StandingsTable.tsx
     - StatsLeaderboard.tsx
   - context/
@@ -473,5 +475,10 @@ Source tree (`src/`):
     - seeds.ts
   - types/
     - index.ts
+  - tests/
+    - seasonSimulation.test.ts
 
-(If you want, I can expand this to include individual exported symbols per file.)
+Top-level scripts:
+- scripts/
+  - e2e.mjs (Playwright end-to-end tests)
+  - simulateFullSeason.ts (Full season simulation utility)

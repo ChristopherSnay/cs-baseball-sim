@@ -2,6 +2,8 @@
 
 A React TypeScript single-page application that simulates a complete 162-game baseball season with team roster drafting and statistical tracking.
 
+🚀 **[Play the Game](https://christophersnay.github.io/cs-baseball-sim/)**
+
 ## Features
 
 - **Team Generation**: Generate 20 CPU teams + 1 user team with custom names
