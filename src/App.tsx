@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // React default import not required with the JSX transform
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from '@mui/material/styles'
@@ -10,7 +11,6 @@ import { Season } from './pages/Season'
 
 function AppContent() {
   // AppContent intentionally minimal — it renders the app routes and header.
-
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <AppBar position="sticky">
@@ -37,10 +37,11 @@ function AppContent() {
 }
 
 export default function App() {
+  const basename = import.meta.env.MODE === 'production' ? '/cs-baseball-sim' : '/'
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Router>
+      <Router basename={basename}>
         <GameProvider>
           <AppContent />
         </GameProvider>
